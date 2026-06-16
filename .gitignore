@@ -1,0 +1,30 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Logs and outputs
+logs/
+output*/
+*.log
+nohup.out
+checkpoints/
+results/
+
+# Archived / not in active development
+history/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Reference papers
+ref/
+cache/
