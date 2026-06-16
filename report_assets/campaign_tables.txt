@@ -1,0 +1,76 @@
+==============================================================================
+BASE (SFT-1800)  pass@1 / pass@128   [D1-6 x T1-6]
+==============================================================================
+  D\T   T1         T2         T3         T4         T5         T6      
+  D1  0.87/0.90   0.85/0.93   0.23/0.25   0.11/0.50   0.01/0.10   0.02/0.23 
+  D2  0.54/0.88   0.49/0.82   0.30/0.47   0.30/0.45   0.21/0.47   0.07/0.45 
+  D3  0.62/0.82   0.38/0.65   0.19/0.45   0.03/0.17   0.03/0.33   0.00/0.05 
+  D4  0.11/0.40   0.15/0.50   0.02/0.25   0.00/0.05   0.03/0.20   0.00/0.00 
+  D5  0.11/0.40   0.01/0.12   0.07/0.12   0.00/0.05   0.00/0.00   0.00/0.00 
+  D6  0.00/0.10   0.02/0.12   0.02/0.10   0.00/0.00   0.00/0.00   0.00/0.00 
+
+Capability (pass@128) marginals:
+  vs depth: D1=0.48  D2=0.59  D3=0.41  D4=0.23  D5=0.12  D6=0.05
+  vs tier : T1=0.58  T2=0.53  T3=0.28  T4=0.20  T5=0.18  T6=0.12
+
+==============================================================================
+SHARPENING vs CAPABILITY  (paired; contrast = SG-CG: >0 sharpening, <0 capability)
+==============================================================================
+
+-- d14_t12 --
+    trained (n= 320): SG +0.039(t+3.8)  CG +0.047(t+2.8)  SG-CG -0.008(t-0.4)  -> CAPABILITY (ceiling↑)
+        out (n=1120): SG +0.010(t+3.9)  CG +0.008(t+1.1)  SG-CG +0.002(t+0.3)  -> sharpening (reliab↑, ceiling~)
+
+-- d12_t12 --
+    trained (n= 160): SG -0.003(t-0.1)  CG +0.025(t+1.2)  SG-CG -0.028(t-1.0)  -> null
+        out (n=1280): SG +0.010(t+3.3)  CG +0.014(t+2.0)  SG-CG -0.004(t-0.5)  -> CAPABILITY (ceiling↑)
+
+-- d34_t12 --
+    trained (n= 160): SG +0.036(t+2.3)  CG +0.050(t+2.2)  SG-CG -0.014(t-0.5)  -> CAPABILITY (ceiling↑)
+        out (n=1280): SG +0.012(t+3.3)  CG +0.012(t+1.7)  SG-CG +0.000(t+0.0)  -> sharpening (reliab↑, ceiling~)
+
+-- d56_t12 --
+    trained (n= 160): SG +0.004(t+0.2)  CG -0.056(t-2.2)  SG-CG +0.060(t+2.7)  -> null
+        out (n=1280): SG +0.018(t+2.8)  CG +0.027(t+2.9)  SG-CG -0.010(t-1.0)  -> CAPABILITY (ceiling↑)
+
+-- d12_t34 --
+    trained (n= 160): SG +0.073(t+4.5)  CG +0.075(t+2.6)  SG-CG -0.002(t-0.1)  -> CAPABILITY (ceiling↑)
+        out (n=1280): SG +0.008(t+1.3)  CG +0.006(t+0.8)  SG-CG +0.002(t+0.2)  -> null
+
+-- d12_t56 --
+    trained (n= 160): SG +0.091(t+5.6)  CG +0.156(t+5.4)  SG-CG -0.065(t-1.9)  -> CAPABILITY (ceiling↑)
+        out (n=1280): SG +0.016(t+2.7)  CG +0.012(t+1.4)  SG-CG +0.005(t+0.5)  -> sharpening (reliab↑, ceiling~)
+
+-- d34_t34 --
+    trained (n= 160): SG +0.021(t+1.9)  CG -0.006(t-0.3)  SG-CG +0.027(t+1.1)  -> null
+        out (n=1280): SG +0.024(t+5.6)  CG +0.016(t+2.2)  SG-CG +0.009(t+1.1)  -> sharpening (reliab↑, ceiling~)
+
+-- d16_t12 --
+    trained (n= 480): SG +0.004(t+0.4)  CG +0.004(t+0.3)  SG-CG +0.000(t+0.0)  -> null
+        out (n= 960): SG +0.025(t+6.5)  CG +0.030(t+3.4)  SG-CG -0.005(t-0.6)  -> CAPABILITY (ceiling↑)
+
+-- d14_t16 --
+    trained (n= 960): SG +0.028(t+4.1)  CG +0.041(t+4.1)  SG-CG -0.013(t-1.2)  -> CAPABILITY (ceiling↑)
+        out (n= 480): SG +0.004(t+0.7)  CG -0.006(t-0.7)  SG-CG +0.010(t+1.2)  -> null
+
+-- d16_t16 --
+    trained (n=1440): SG +0.023(t+4.7)  CG +0.025(t+3.3)  SG-CG -0.002(t-0.2)  -> CAPABILITY (ceiling↑)
+        out (n=   0): SG +nan(t+0.0)  CG +nan(t+0.0)  SG-CG +nan(t+0.0)  -> null
+
+==============================================================================
+OFF-DIAGONAL TRANSFER  (CG: in-region vs out-region; peak-CG cell & its location)
+==============================================================================
+     recipe           CG_in          CG_out  transfer  peak-CG cell
+    d14_t12  +0.047(t+2.8)  +0.008(t+1.1)   0.15     D2xT5 +0.175 [OUT-region]
+    d12_t12  +0.025(t+1.2)  +0.014(t+2.0)   0.36     D4xT2 +0.100 [OUT-region]
+    d34_t12  +0.050(t+2.2)  +0.012(t+1.7)   0.19     D2xT5 +0.175 [OUT-region]
+    d56_t12  -0.056(t-2.2)  +0.027(t+2.9)    nan     D1xT5 +0.225 [OUT-region]
+    d12_t34  +0.075(t+2.6)  +0.006(t+0.8)   0.08     D2xT5 +0.175 [OUT-region]
+    d12_t56  +0.156(t+5.4)  +0.012(t+1.4)   0.07     D1xT5 +0.275 [IN-region]
+    d34_t34  -0.006(t-0.3)  +0.016(t+2.2)   1.67     D2xT5 +0.150 [OUT-region]
+    d16_t12  +0.004(t+0.3)  +0.030(t+3.4)   0.88     D1xT5 +0.175 [OUT-region]
+    d14_t16  +0.041(t+4.1)  -0.006(t-0.7)  -0.18     D2xT5 +0.200 [IN-region]
+    d16_t16  +0.025(t+3.3)  +0.000(t+0.0)   0.00     D2xT5 +0.150 [IN-region]
+
+   transfer index = CG_out / (CG_in + CG_out); ~0.5 means gains split evenly in/out,
+   >0.5 means most capability gain lands OUTSIDE the trained region (= transfer).
