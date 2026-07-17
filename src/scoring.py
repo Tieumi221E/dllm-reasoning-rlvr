@@ -4,8 +4,9 @@ Process / answer scorers (m_P, m_A) and the unbiased pass@k estimator.
 Strict, process-verified `pass@k` with `m_P ∧ m_A`, following the evaluation design of
 the AR-baseline study (arXiv:2605.26934). m_A is exact (normalized) answer matching against
 gold or any provided equivalent answer; m_P checks the task-specific reasoning trace.
-Pure text functions — no model / torch dependency.
+Pure text functions - no model / torch dependency.
 """
+
 import math
 import re
 import string
@@ -49,16 +50,21 @@ def _check_answer(gen_text: str, gold_answer: str, equivalent_answers=None) -> b
 
 def _missing_condition(text: str):
     """Extract abductive gap-boundary states (before_missing, after_missing), normalized."""
-    gb = re.search(r"before the missing step:\s*(.+?)\.\s*after the missing step:",
-                   text, re.IGNORECASE)
+    gb = re.search(
+        r"before the missing step:\s*(.+?)\.\s*after the missing step:",
+        text,
+        re.IGNORECASE,
+    )
     ga = re.search(r"after the missing step:\s*(.+?)\.", text, re.IGNORECASE)
-    return (_normalize(gb.group(1)) if gb else None,
-            _normalize(ga.group(1)) if ga else None)
+    return (
+        _normalize(gb.group(1)) if gb else None,
+        _normalize(ga.group(1)) if ga else None,
+    )
 
 
 def _check_process(gen_text: str, task: dict) -> bool:
     """m_P: task-specific process matching."""
-    task_type     = task.get("task_type", "")
+    task_type = task.get("task_type", "")
     gold_solution = task.get("solution", "")
 
     if task_type in ("deductive", "deduction_full_info", "deduction_hard"):
@@ -69,7 +75,9 @@ def _check_process(gen_text: str, task: dict) -> bool:
         gen_states = re.findall(r"State:\s*([^.]+)\.", gen_text, re.IGNORECASE)
         if len(gen_states) != len(gold_states):
             return False
-        return all(_normalize(g) == _normalize(p) for g, p in zip(gold_states, gen_states))
+        return all(
+            _normalize(g) == _normalize(p) for g, p in zip(gold_states, gen_states)
+        )
 
     elif task_type == "abductive":
         # Core process score = missing-condition: the model must mark the gap-boundary states correctly
@@ -96,7 +104,9 @@ def _check_process(gen_text: str, task: dict) -> bool:
 
 
 def is_correct(gen_text: str, task: dict, metric: str) -> bool:
-    m_a = _check_answer(gen_text, task.get("answer", ""), task.get("equivalent_answers"))
+    m_a = _check_answer(
+        gen_text, task.get("answer", ""), task.get("equivalent_answers")
+    )
     if metric == "answer_only":
         return m_a
     return m_a and _check_process(gen_text, task)  # strict: m_P ∧ m_A
@@ -108,6 +118,8 @@ def _passk(n_correct: int, n_total: int, k: int) -> float:
         return float("nan")
     if n_total - n_correct < k:
         return 1.0
-    log_num = sum(math.log(n_total - n_correct - i) for i in range(k))  # log-space, avoid overflow
+    log_num = sum(
+        math.log(n_total - n_correct - i) for i in range(k)
+    )  # log-space, avoid overflow
     log_den = sum(math.log(n_total - i) for i in range(k))
     return 1.0 - math.exp(log_num - log_den)

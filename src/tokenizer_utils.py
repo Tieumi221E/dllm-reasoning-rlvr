@@ -10,11 +10,11 @@ class KGTokenizer:
 
     def __init__(self, tok: _Tokenizer) -> None:
         self._tok = tok
-        self.pad_token_id  = tok.token_to_id("[PAD]")
-        self.bos_token_id  = tok.token_to_id("[BOS]")
-        self.eos_token_id  = tok.token_to_id("[EOS]")
+        self.pad_token_id = tok.token_to_id("[PAD]")
+        self.bos_token_id = tok.token_to_id("[BOS]")
+        self.eos_token_id = tok.token_to_id("[EOS]")
         self.mask_token_id = tok.token_to_id("[MASK]")
-        self.unk_token_id  = tok.token_to_id("[UNK]")
+        self.unk_token_id = tok.token_to_id("[UNK]")
 
     @property
     def vocab_size(self) -> int:
@@ -28,15 +28,20 @@ class KGTokenizer:
 
     def decode(self, ids: list[int], skip_special_tokens: bool = True) -> str:
         if skip_special_tokens:
-            special = {self.pad_token_id, self.bos_token_id, self.eos_token_id,
-                       self.mask_token_id, self.unk_token_id}
+            special = {
+                self.pad_token_id,
+                self.bos_token_id,
+                self.eos_token_id,
+                self.mask_token_id,
+                self.unk_token_id,
+            }
             ids = [i for i in ids if i not in special]
         # tokenizer.json has decoder=null, so the library joins token strings
         # with spaces and leaves Ġ (U+0120, GPT-2 BPE space prefix) as-is.
         # Fix: join raw token strings directly (no spaces), then replace Ġ→space.
         tokens = [self._tok.id_to_token(i) for i in ids]
-        text = ''.join(t for t in tokens if t is not None)
-        return text.replace('Ġ', ' ').strip()
+        text = "".join(t for t in tokens if t is not None)
+        return text.replace("Ġ", " ").strip()
 
     def get_vocab_size(self) -> int:
         return self._tok.get_vocab_size()

@@ -6,7 +6,7 @@ GPU=$1; shift
 for spec in "$@"; do
   IFS='|' read -r name model <<< "$spec"
   echo "[$(date +%H:%M:%S)] GPU$GPU start $name ($model)"
-  CUDA_VISIBLE_DEVICES=$GPU conda run -n dllm --no-capture-output python -m src.small_evaluate \
+  CUDA_VISIBLE_DEVICES=$GPU python -m src.small_evaluate \
     --model_path "$model" --out_path "results/$name.json" \
     --task_type deductive --min_depth 1 --max_depth 6 --min_tier 1 --max_tier 6 \
     --num_samples 128 --max_tasks_per_cell 40 --gen_length 384 --block_length 32 --steps 32 \
