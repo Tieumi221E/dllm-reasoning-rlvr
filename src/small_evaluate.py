@@ -18,7 +18,7 @@ import torch
 
 from src.model_wrapper import DiffusionTransformerLM
 from src.tokenizer_utils import KGTokenizer
-from diffusion_core.inference import DiffusionSampler       # TRUE incremental block gen
+from src.sampling_bridge import generate_blocked            # TRUE incremental block gen (dllm)
 from src.scoring import _check_answer, _check_process, _passk  # m_P / m_A / pass@k
 from src.data_utils import expand_graph_to_tasks            # noqa: E402
 
@@ -35,6 +35,9 @@ def main():
     ap.add_argument("--model_path", required=True)
     ap.add_argument("--out_path", required=True)
     ap.add_argument("--val_data", default="data_generation/output_stratified_pretrain_3200000_0.1562_rl1x_1200000_eval_4800_0.3722_20260527_193136/eval.json")
+    ap.add_argument("--task_cache", default=None,
+                    help="optional pickle of pre-expanded tasks (cache/*.pkl); "
+                         "used instead of --val_data when given")
     ap.add_argument("--task_type", default="deductive")
     ap.add_argument("--num_samples", type=int, default=8)
     ap.add_argument("--max_tasks_per_cell", type=int, default=4)
@@ -54,19 +57,23 @@ def main():
     model = DiffusionTransformerLM.from_pretrained(args.model_path, torch_dtype=torch.bfloat16).to(device).eval()
     mask_id, eos_id = tok.mask_token_id, tok.eos_token_id
     # TRUE incremental block generation: blocks are appended one at a time and the
-    # model only ever sees [committed prefix + current block] — no fixed full-mask
+    # model only ever sees [committed prefix + current block] - no fixed full-mask
     # canvas, so gen_length is just a hard cap; length emerges from EOS. This is
     # what the semi-AR SFT was trained for.
-    sampler = DiffusionSampler(model.model, tok, mask_id, device, temperature=args.temperature)
     steps_per_block = args.steps or 16
     print(f"model {args.model_path}  MASK={mask_id} EOS={eos_id}  block-gen "
           f"block={args.block_length} steps/block={steps_per_block} cap={args.gen_length} T={args.temperature}")
 
     # collect tasks per cell
-    graphs = json.load(open(args.val_data))
+    if args.task_cache:
+        import pickle
+        all_tasks = pickle.load(open(args.task_cache, "rb"))
+    else:
+        all_tasks = (t for g in json.load(open(args.val_data))
+                     for t in expand_graph_to_tasks(g))
     per_cell = {}
-    for g in graphs:
-        for t in expand_graph_to_tasks(g):
+    if True:
+        for t in all_tasks:
             if t.get("task_type") != args.task_type or not t.get("solution"):
                 continue
             d, tier = t.get("depth"), t.get("complexity_tier")
@@ -87,10 +94,11 @@ def main():
         rem = args.num_samples
         while rem > 0:
             mb = min(args.micro_batch, rem)
-            gen_lists = sampler.generate_batch_blocked(
-                prompt_ids, num_samples=mb, max_new_tokens=args.gen_length,
-                block_size=args.block_length, steps_per_block=steps_per_block,
-                remask_mode="low_confidence_static", temperature=args.temperature)
+            gen_lists = generate_blocked(
+                model.model, prompt_ids, num_samples=mb,
+                gen_length=args.gen_length, block_length=args.block_length,
+                steps_per_block=steps_per_block, temperature=args.temperature,
+                eos_token_id=eos_id, mask_token_id=mask_id, device=device)
             texts += [tok.decode(ids, skip_special_tokens=True) for ids in gen_lists]
             rem -= mb
         gold = t.get("answer", "")

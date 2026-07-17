@@ -96,7 +96,7 @@ def fig_rl(base, out):
                         ax.add_patch(plt.Rectangle((tt - 1.5, dd - 1.5), 1, 1, fill=False,
                                                    edgecolor="lime", lw=2.5))
             fig.colorbar(axes[row, col].images[0], ax=ax, fraction=0.046, pad=0.04)
-    fig.suptitle("RLVR effect per recipe — SG (sharpening) vs CG (ceiling gain)\n"
+    fig.suptitle("RLVR effect per recipe - SG (sharpening) vs CG (ceiling gain)\n"
                  "green box = RL training region; red = gain, blue = loss", fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.97])
     fig.savefig(out, dpi=130); plt.close(fig)

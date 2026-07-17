@@ -2,14 +2,14 @@
 Block-wise semi-autoregressive SFT for the small diffusion LM (corrected design).
 
 The ONLY thing trained, per example: given a CLEAN prefix [prompt + answer blocks
-0..k-1], predict the (k+1)-th block — and NOTHING after it is in the sequence, so
+0..k-1], predict the (k+1)-th block - and NOTHING after it is in the sequence, so
 there is no future-length leakage (matches TRUE incremental block generation).
 
   - response (= answer tokens + its EOS) is padded with EOS to a multiple of
     block_length, then cut into blocks of block_length.
   - sample k ∈ [0, num_blocks-1]. sequence = prompt + blocks[0:k] (clean) + block[k].
   - WITHIN block[k] apply standard MDM random masking Bernoulli(t), t~U(0,1):
-    high t = cold-start a fresh block, low t = refine a partly-filled block —
+    high t = cold-start a fresh block, low t = refine a partly-filled block -
     exactly the two things block-diffusion does per block.
   - EOS is the continue/terminate signal: a mid-response block is pure content
     (→ learn to continue, no EOS); the final block holds content-tail + EOS pad

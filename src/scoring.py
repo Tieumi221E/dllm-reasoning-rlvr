@@ -4,7 +4,7 @@ Process / answer scorers (m_P, m_A) and the unbiased pass@k estimator.
 Strict, process-verified `pass@k` with `m_P ∧ m_A`, following the evaluation design of
 the AR-baseline study (arXiv:2605.26934). m_A is exact (normalized) answer matching against
 gold or any provided equivalent answer; m_P checks the task-specific reasoning trace.
-Pure text functions — no model / torch dependency.
+Pure text functions - no model / torch dependency.
 """
 import math
 import re

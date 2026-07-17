@@ -81,7 +81,7 @@ def _collapse_steps(order_full: torch.Tensor, prompt_len: int, k: int) -> torch.
 @torch.no_grad()
 def _compute_logp_old(
     model,
-    full_ids:   torch.Tensor,  # (L,) on device — prompt + generated tokens
+    full_ids:   torch.Tensor,  # (L,) on device - prompt + generated tokens
     step_map:   torch.Tensor,  # (gen_len,) CPU
     prompt_len: int,
     mask_id:    int = MASK_ID,
@@ -91,7 +91,7 @@ def _compute_logp_old(
     """
     Pre-compute log P_old(x_t | noisy_ids_t) for every trajectory step.
     MUST be called with model.eval() and inside torch.no_grad(), BEFORE optimizer.step().
-    Returns list of (pmask, mask_pos, logp_old_cpu) — one entry per shrunk step.
+    Returns list of (pmask, mask_pos, logp_old_cpu) - one entry per shrunk step.
     """
     device     = full_ids.device
     L          = len(full_ids)
@@ -109,15 +109,17 @@ def _compute_logp_old(
         steps_meta.append((pmask, mask_pos))
 
     step_list = []
-    for i in range(0, len(steps_meta), chunk):
-        sub   = steps_meta[i:i + chunk]
-        noisy = torch.stack([full_ids.masked_fill(mp, mask_id) for _, mp in sub])
-        logits = model(noisy).logits             # (c, L, V)
-        for k, (pmask, mask_pos) in enumerate(sub):
-            rows     = logits[k][pmask].float()  # (n_mask, V) — softmax is per-position
-            logp     = F.log_softmax(rows, dim=-1)
-            logp_old = logp.gather(1, full_ids[pmask].unsqueeze(1)).squeeze(1).cpu()
-            step_list.append((pmask, mask_pos, logp_old))
+    for pmask, mask_pos in steps_meta:
+        # incremental canvas: the rollout sampler truncates the sequence at the
+        # end of the current block group - future blocks do not exist, so the
+        # reconstructed state must truncate too (never full-canvas masks).
+        end = int(pmask.nonzero().max().item()) + 1
+        noisy = full_ids[:end].masked_fill(pmask[:end], mask_id).unsqueeze(0)
+        logits = model(noisy).logits[0]          # (end, V)
+        rows     = logits[pmask[:end]].float()
+        logp     = F.log_softmax(rows, dim=-1)
+        logp_old = logp.gather(1, full_ids[:end][pmask[:end]].unsqueeze(1)).squeeze(1).cpu()
+        step_list.append((pmask, mask_pos, logp_old))
     return step_list
 
 
@@ -126,7 +128,7 @@ def _tracerl_ppo_backward(
     full_ids:   torch.Tensor,  # (L,) on device
     step_list:  list,          # from _compute_logp_old
     advantage:  float,
-    normalizer: float,         # n_active rollouts — keeps gradient scale stable
+    normalizer: float,         # n_active rollouts - keeps gradient scale stable
     eps:        float = 0.2,
     beta:       float = 0.01,
     use_kl_k3:  bool  = True,  # k3 unbiased KL estimator (default in TraceRL)
@@ -145,17 +147,18 @@ def _tracerl_ppo_backward(
 
     tot_policy = tot_kl = tot_clip = tot_ratio = 0.0
 
-    for i in range(0, n_steps, chunk):
-        sub   = step_list[i:i + chunk]
-        noisy = torch.stack([full_ids.masked_fill(mp, mask_id) for _, mp, _ in sub])
-        logits = model(noisy).logits                                      # (c, L, V)
-
+    for i in range(0, n_steps, 1):
+        sub = step_list[i:i + 1]
         chunk_loss = None
-        for k, (pmask, mask_pos, logp_old_cpu) in enumerate(sub):
+        for (pmask, mask_pos, logp_old_cpu) in sub:
+            # same incremental-canvas state as _compute_logp_old
+            end   = int(pmask.nonzero().max().item()) + 1
+            noisy = full_ids[:end].masked_fill(pmask[:end], mask_id).unsqueeze(0)
+            logits = model(noisy).logits[0]
             logp_old = logp_old_cpu.to(device)                            # (n_mask,)
-            rows     = logits[k][pmask].float()                           # (n_mask, V)
+            rows     = logits[pmask[:end]].float()                        # (n_mask, V)
             logp_new = F.log_softmax(rows, dim=-1).gather(
-                1, full_ids[pmask].unsqueeze(1)
+                1, full_ids[:end][pmask[:end]].unsqueeze(1)
             ).squeeze(1)                                                  # (n_mask,)
 
             # PPO-clip objective
@@ -164,7 +167,7 @@ def _tracerl_ppo_backward(
             surr    = torch.min(ratio * adv_t, clipped * adv_t)
             policy_loss = -surr.mean()
 
-            # KL penalty — added to loss, not just logged
+            # KL penalty - added to loss, not just logged
             kl = logp_new - logp_old
             kl_pen = (-kl).exp() - 1.0 + kl if use_kl_k3 else kl          # k3 or k1
             kl_loss = beta * kl_pen.mean()

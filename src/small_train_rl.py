@@ -22,7 +22,7 @@ import torch
 
 from src.model_wrapper import DiffusionTransformerLM
 from src.tokenizer_utils import KGTokenizer
-from diffusion_core.inference import DiffusionSampler          # same proven generator as eval
+from src.sampling_bridge import generate_blocked               # same generator as eval (dllm)
 from src.rl_core import compute_reward, _compute_logp_old, _tracerl_ppo_backward
 from src.data_utils import RECIPE_FILTERS               # reuse the paper-aligned recipe regions
 
@@ -30,7 +30,7 @@ CACHE = "cache/tasks_full_grid_deductive_50000.pkl"
 
 
 def load_recipe_tasks(recipe, cache=CACHE):
-    """Filter the cached deductive task pool by the recipe's (D,T) region —
+    """Filter the cached deductive task pool by the recipe's (D,T) region -
     the paper-aligned RECIPE_FILTERS (depth_mid = D5-7×T1-2, etc.)."""
     from collections import Counter
     flt = RECIPE_FILTERS[recipe]
@@ -47,7 +47,6 @@ def train(args):
     tok = KGTokenizer.from_file(os.path.join(args.sft_path, "tokenizer.json"))
     mask_id, eos_id = tok.mask_token_id, tok.eos_token_id
     model = DiffusionTransformerLM.from_pretrained(args.sft_path, torch_dtype=torch.bfloat16).to(device)
-    sampler = DiffusionSampler(model.model, tok, mask_id, device, temperature=args.temperature)
     print(f"model {sum(p.numel() for p in model.parameters())/1e6:.1f}M (full FT)  MASK={mask_id} EOS={eos_id}")
 
     tasks = load_recipe_tasks(args.recipe)
@@ -71,10 +70,12 @@ def train(args):
             prompt_len = prompt_ids.shape[1]
             # ── rollout: reuse the proven DiffusionSampler (diverse, true block gen) ──
             with torch.no_grad():
-                gen = sampler.generate_batch_blocked(
-                    pid, num_samples=args.G, max_new_tokens=args.gen_length,
-                    block_size=args.block_length, steps_per_block=args.steps_per_block,
-                    temperature=args.temperature)
+                gen = generate_blocked(
+                    model.model, pid, num_samples=args.G,
+                    gen_length=args.gen_length, block_length=args.block_length,
+                    steps_per_block=args.steps_per_block,
+                    temperature=args.temperature, eos_token_id=eos_id,
+                    mask_token_id=mask_id, device=device)
             texts = [tok.decode(r, skip_special_tokens=True) for r in gen]
             # block-based step_map: a token's "denoising step" = its block index
             # (matches the block-wise generation + semi-AR SFT). post-EOS pad = -1.
@@ -106,7 +107,7 @@ def train(args):
         torch.cuda.empty_cache()
         win_draws += draws; win_accepted += len(rollout_data)
         if not rollout_data:
-            print(f"step={opt_step}/{args.total_steps} no-variance after {draws} draws — skip"); continue
+            print(f"step={opt_step}/{args.total_steps} no-variance after {draws} draws - skip"); continue
 
         # ── PPO update (reused TraceRL backward) ──
         model.train(); optimizer.zero_grad()

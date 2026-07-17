@@ -122,7 +122,7 @@ def fig_rl_grid(base, rls):
                     if trained(dd, tt):
                         ax.add_patch(plt.Rectangle((tt - 1.5, dd - 1.5), 1, 1, fill=False,
                                                    edgecolor="lime", lw=2.0))
-    fig.suptitle("RLVR effect per recipe — SG (sharpening) vs CG (ceiling gain)\n"
+    fig.suptitle("RLVR effect per recipe - SG (sharpening) vs CG (ceiling gain)\n"
                  "green box = RL training region; red = gain, blue = loss", fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.99])
     fig.savefig(f"{OUT}/fig_rl_grid.png", dpi=120); plt.close(fig)
@@ -152,11 +152,11 @@ def fig_best_recipe(base, rls):
                     win_lab[dd - 1][tt - 1] = f"{best_name}\n{best_m:+.2f}"
                 else:
                     win_val[dd - 1, tt - 1] = 0.0
-                    win_lab[dd - 1][tt - 1] = "—"
+                    win_lab[dd - 1][tt - 1] = "-"
         im = ax.imshow(win_val, origin="lower", cmap="YlOrRd", vmin=0, vmax=0.25, aspect="auto")
         ax.set_xticks(range(6)); ax.set_xticklabels([f"T{t}" for t in TIERS])
         ax.set_yticks(range(6)); ax.set_yticklabels([f"D{d}" for d in DEPTHS])
-        ax.set_title(f"Best recipe per cell — {metric}\n(blank '—' = no recipe beats base at t≥{T_GATE})",
+        ax.set_title(f"Best recipe per cell - {metric}\n(blank '-' = no recipe beats base at t≥{T_GATE})",
                      fontsize=10)
         for i in range(6):
             for j in range(6):
