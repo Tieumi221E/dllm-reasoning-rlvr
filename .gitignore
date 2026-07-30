@@ -20,6 +20,7 @@ results/
 
 # Archived / not in active development
 history/
+private/
 
 # OS files
 .DS_Store
