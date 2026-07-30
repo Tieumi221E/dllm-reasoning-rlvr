@@ -24,7 +24,7 @@ import os
 import random
 import sys
 import torch
-import torch.nn.functional as F
+from dllm import masked_cross_entropy
 from torch.optim import AdamW
 from transformers import get_cosine_schedule_with_warmup
 
@@ -89,17 +89,13 @@ def loss_fn(model, body, target, attn, lossmask, pmask):
     sel = lossmask
     if not sel.any():
         return None
-    ce = F.cross_entropy(logits[sel].float(), target[sel], reduction="none")
-    ce = ce / pmask[sel]  # MDM importance weight
-    seq_idx = sel.nonzero(as_tuple=False)[:, 0]
-    B = body.shape[0]
-    seq_sum = torch.zeros(B, device=body.device).scatter_add_(0, seq_idx, ce)
-    seq_cnt = (
-        torch.zeros(B, device=body.device)
-        .scatter_add_(0, seq_idx, torch.ones_like(ce))
-        .clamp(min=1)
+    return masked_cross_entropy(
+        logits,
+        target,
+        sel,
+        token_weight=pmask.reciprocal(),
+        reduction="sample_mean",
     )
-    return (seq_sum / seq_cnt).mean()
 
 
 def stream_train(jsonl_path, max_depth, task_type, buf_size=8000):

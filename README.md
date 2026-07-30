@@ -35,11 +35,11 @@ and allocation pipeline.
 The code imports `dllm`, the masked-diffusion toolkit maintained in
 [Tieumi221E/dllm](https://github.com/Tieumi221E/dllm). It is project source
 code, not a PyPI requirement. The released experiment is tied to commit
-`205d08882d2de3305a1b75e2e29613d87e569e5a`:
+`e22684e48a6a4e2637f5112bbaff508b125c7643`:
 
 ```bash
 git clone https://github.com/Tieumi221E/dllm.git
-git -C dllm checkout 205d08882d2de3305a1b75e2e29613d87e569e5a
+git -C dllm checkout e22684e48a6a4e2637f5112bbaff508b125c7643
 python -m pip install -e ./dllm
 python -m pip install -r requirements.txt
 ```
@@ -55,7 +55,7 @@ src/
   small_evaluate.py    paired grid evaluation
   data_utils.py        task expansion and recipe filters
   scoring.py           process/answer scoring and pass@k
-  rl_core.py           reward and trajectory PPO core
+  rl_core.py           reward and shared trajectory-PPO adapter
 scripts/
   run_rl_queue.sh      final 10-recipe training queue
   run_full36_queue.sh  final full-grid evaluation queue

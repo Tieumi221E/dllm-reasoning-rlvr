@@ -133,6 +133,7 @@ def train(args):
                         torch.cat([prompt_ids[0], g_ids[g].to(device)]),
                         g_map[g],
                         prompt_len,
+                        args.block_length,
                         mask_id,
                         args.shrink,
                     )
@@ -172,21 +173,17 @@ def train(args):
         tp = tk = tc = tr = 0.0
         n_ppo = 0
         for rd in rollout_data:
-            pid = rd["prompt_ids"].to(device)
             for g in range(args.G):
                 adv = rd["advantages"][g].item()
                 if abs(adv) < 1e-6:
                     continue
-                full_ids = torch.cat([pid, rd["gen_ids"][g].to(device)])
                 p, k, c, r = _tracerl_ppo_backward(
                     model,
-                    full_ids,
                     rd["step_lists"][g],
                     adv,
                     norm,
                     eps=args.eps,
                     beta=args.beta,
-                    mask_id=mask_id,
                     chunk=args.ppo_chunk,
                 )
                 tp += p

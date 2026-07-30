@@ -10,10 +10,15 @@ LLaDA pipelines; the small-model RL training (`src.small_train_rl`) imports
 `compute_reward`, `_compute_logp_old`, `_tracerl_ppo_backward` from here.
 """
 
+import math
 import re
 
 import torch
-import torch.nn.functional as F
+from dllm import (
+    ppo_clip_objective,
+    score_trajectory_states,
+    trajectory_states,
+)
 
 from src.scoring import _normalize, _check_answer, _check_process
 
@@ -69,30 +74,13 @@ def compute_reward(gen_text: str, task: dict, graded_process: bool = False) -> t
 # ── TraceRL PPO-clip + KL ─────────────────────────────────────────────────────
 
 
-def _collapse_steps(order_full: torch.Tensor, prompt_len: int, k: int) -> torch.Tensor:
-    """Merge up to k unique step-values in response positions (shrink parameter)."""
-    resp = order_full[prompt_len:]
-    valid = resp[resp >= 0]
-    if len(valid) == 0:
-        return order_full
-    unique_vals = torch.unique(valid, sorted=True)
-    if len(unique_vals) <= k:
-        return order_full
-    n = len(unique_vals)
-    result = order_full.clone()
-    for i, v in enumerate(unique_vals.tolist()):
-        bucket = min(int(i * k / n), k - 1)
-        bucket_val = unique_vals[int(bucket * n / k)].item()
-        result[order_full == v] = bucket_val
-    return result
-
-
 @torch.no_grad()
 def _compute_logp_old(
     model,
     full_ids: torch.Tensor,  # (L,) on device - prompt + generated tokens
     step_map: torch.Tensor,  # (gen_len,) CPU
     prompt_len: int,
+    block_length: int,
     mask_id: int = MASK_ID,
     shrink: int = 8,
     chunk: int = 4,  # trajectory steps batched per forward
@@ -100,50 +88,38 @@ def _compute_logp_old(
     """
     Pre-compute log P_old(x_t | noisy_ids_t) for every trajectory step.
     MUST be called with model.eval() and inside torch.no_grad(), BEFORE optimizer.step().
-    Returns list of (pmask, mask_pos, logp_old_cpu) - one entry per shrunk step.
+    Returns ``(TrajectoryState, logp_old_cpu)`` entries.
+
+    Shrinking only merges steps within a block. Merging states across block
+    boundaries would change the incremental-canvas attention context.
     """
-    device = full_ids.device
-    L = len(full_ids)
-    order_full = torch.full((L,), -1, dtype=torch.long, device=device)
-    order_full[prompt_len:] = step_map.to(device)
-    if shrink > 0:
-        order_full = _collapse_steps(order_full, prompt_len, shrink)
-    uniq_steps = torch.unique(order_full[prompt_len:], sorted=True)
-    uniq_steps = uniq_steps[uniq_steps >= 0]
-
-    steps_meta = []
-    for sv in uniq_steps:
-        pmask = order_full == sv  # target tokens at this step
-        mask_pos = order_full >= sv  # all positions still masked
-        steps_meta.append((pmask, mask_pos))
-
-    step_list = []
-    for pmask, mask_pos in steps_meta:
-        # incremental canvas: the rollout sampler truncates the sequence at the
-        # end of the current block group - future blocks do not exist, so the
-        # reconstructed state must truncate too (never full-canvas masks).
-        end = int(pmask.nonzero().max().item()) + 1
-        noisy = full_ids[:end].masked_fill(pmask[:end], mask_id).unsqueeze(0)
-        logits = model(noisy).logits[0]  # (end, V)
-        rows = logits[pmask[:end]].float()
-        logp = F.log_softmax(rows, dim=-1)
-        logp_old = (
-            logp.gather(1, full_ids[:end][pmask[:end]].unsqueeze(1)).squeeze(1).cpu()
-        )
-        step_list.append((pmask, mask_pos, logp_old))
-    return step_list
+    valid_steps = torch.unique(step_map[step_map >= 0])
+    collapse = "none"
+    if shrink > 0 and valid_steps.numel() > shrink:
+        collapse = max(1, math.ceil(valid_steps.numel() / shrink))
+    states = trajectory_states(
+        full_ids[:prompt_len],
+        full_ids[prompt_len:],
+        step_map,
+        mask_id,
+        block_length,
+        canvas="incremental",
+        collapse=collapse,
+    )
+    scored = score_trajectory_states(model, states, chunk=chunk)
+    return [
+        (state.to("cpu"), score.logp.cpu()) for state, score in zip(states, scored)
+    ]
 
 
 def _tracerl_ppo_backward(
     model,
-    full_ids: torch.Tensor,  # (L,) on device
     step_list: list,  # from _compute_logp_old
     advantage: float,
     normalizer: float,  # n_active rollouts - keeps gradient scale stable
     eps: float = 0.2,
     beta: float = 0.01,
     use_kl_k3: bool = True,  # k3 unbiased KL estimator (default in TraceRL)
-    mask_id: int = MASK_ID,
     chunk: int = 2,  # trajectory steps batched per forward+backward
 ) -> tuple:
     """
@@ -152,51 +128,53 @@ def _tracerl_ppo_backward(
     backward (losses are summed; each step's loss only depends on its own row).
     Returns (policy_loss, kl_loss, clip_frac, ratio_mean) averaged over steps.
     """
-    device = full_ids.device
     n_steps = len(step_list)
+    if n_steps == 0:
+        return 0.0, 0.0, 0.0, 0.0
+    device = next(model.parameters()).device
     adv_t = torch.tensor(advantage, dtype=torch.float32, device=device)
 
     tot_policy = tot_kl = tot_clip = tot_ratio = 0.0
 
-    for i in range(0, n_steps, 1):
-        sub = step_list[i : i + 1]
+    i = 0
+    while i < n_steps:
+        state_length = step_list[i][0].input_ids.numel()
+        end = i + 1
+        while (
+            end < n_steps
+            and end - i < chunk
+            and step_list[end][0].input_ids.numel() == state_length
+        ):
+            end += 1
+        sub = step_list[i:end]
+        device_states = [state.to(device) for state, _ in sub]
+        scored = score_trajectory_states(
+            model,
+            device_states,
+            chunk=chunk,
+            with_grad=True,
+        )
         chunk_loss = None
-        for pmask, mask_pos, logp_old_cpu in sub:
-            # same incremental-canvas state as _compute_logp_old
-            end = int(pmask.nonzero().max().item()) + 1
-            noisy = full_ids[:end].masked_fill(pmask[:end], mask_id).unsqueeze(0)
-            logits = model(noisy).logits[0]
-            logp_old = logp_old_cpu.to(device)  # (n_mask,)
-            rows = logits[pmask[:end]].float()  # (n_mask, V)
-            logp_new = (
-                F.log_softmax(rows, dim=-1)
-                .gather(1, full_ids[:end][pmask[:end]].unsqueeze(1))
-                .squeeze(1)
-            )  # (n_mask,)
-
-            # PPO-clip objective
-            ratio = torch.exp(logp_new - logp_old)  # (n_mask,)
-            clipped = torch.clamp(ratio, 1.0 - eps, 1.0 + eps)
-            surr = torch.min(ratio * adv_t, clipped * adv_t)
-            policy_loss = -surr.mean()
-
-            # KL penalty - added to loss, not just logged
-            kl = logp_new - logp_old
-            kl_pen = (-kl).exp() - 1.0 + kl if use_kl_k3 else kl  # k3 or k1
-            kl_loss = beta * kl_pen.mean()
-
-            step_loss = (policy_loss + kl_loss) / (normalizer * n_steps)
+        for (_, logp_old_cpu), score in zip(sub, scored):
+            objective = ppo_clip_objective(
+                score.logp,
+                logp_old_cpu,
+                adv_t,
+                clip_eps=eps,
+                beta=beta,
+                kl_estimator="k3" if use_kl_k3 else "k1",
+            )
+            step_loss = objective.loss / (normalizer * n_steps)
             chunk_loss = step_loss if chunk_loss is None else chunk_loss + step_loss
 
             with torch.no_grad():
-                tot_policy += policy_loss.item()
-                tot_kl += kl_loss.item()
-                tot_clip += (
-                    ((ratio < 1.0 - eps) | (ratio > 1.0 + eps)).float().mean().item()
-                )
-                tot_ratio += ratio.mean().item()
+                tot_policy += objective.policy_loss.item()
+                tot_kl += objective.kl_loss.item()
+                tot_clip += objective.clip_fraction.item()
+                tot_ratio += objective.ratio_mean.item()
 
         chunk_loss.backward()  # frees this chunk's graph
+        i = end
 
     n = max(n_steps, 1)
     return tot_policy / n, tot_kl / n, tot_clip / n, tot_ratio / n
